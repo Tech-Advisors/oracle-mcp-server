@@ -88,7 +88,7 @@ from typing import List, Dict, Any, Set, Tuple, Optional
 import re
 import json
 from collections import defaultdict
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 
 # Configuration constants
@@ -367,11 +367,22 @@ def _format_relationship_groups(groups: List[Dict[str, Any]], result: List[str])
                 result.append(f"      {pattern}")
 
 def _json_serializer(obj: Any) -> Any:
-    """Custom JSON serializer for objects not serializable by default json code."""
+    """Custom JSON serializer for objects not serializable by default json code.
+
+    Decimals are emitted as strings, not floats: a float silently rounds an
+    Oracle NUMBER that carries more significant digits than a double holds, and
+    sums of floats drift (0.1 + 0.2). The string keeps every digit exactly as
+    the database stored it; the consumer decides how to do arithmetic on it.
+    """
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, Decimal):
-        return float(obj)
+        return str(obj)
+    if isinstance(obj, timedelta):
+        return str(obj)
+    if isinstance(obj, (bytes, bytearray)):
+        # RAW / BLOB columns: hex keeps the bytes exact and JSON-safe.
+        return obj.hex()
     # Handle Oracle-specific types
     if hasattr(obj, '__class__') and 'oracle' in str(type(obj)).lower():
         return str(obj)
@@ -386,9 +397,10 @@ def format_as_json(data: Any) -> str:
         data: Any JSON-serializable data structure
         
     Returns:
-        Formatted JSON string with indentation
+        Compact JSON string (no indentation: the output is read by programs
+        and by LLMs, and whitespace only costs tokens)
     """
-    return json.dumps(data, indent=2, default=_json_serializer)
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=_json_serializer)
 
 
 def format_sql_query_result(result: Dict[str, Any], output_format: str = "markdown") -> str:
@@ -404,12 +416,12 @@ def format_sql_query_result(result: Dict[str, Any], output_format: str = "markdo
     """
     if not result.get("rows"):
         if output_format.lower() == "json":
-            return json.dumps({
+            return format_as_json({
                 "row_count": 0,
                 "columns": result.get("columns", []),
                 "rows": [],
-                "message": "Query executed successfully, but returned no rows."
-            }, indent=2, default=_json_serializer)
+                "more_rows_available": False,
+            })
         return "Query executed successfully, but returned no rows."
 
     # JSON format
@@ -417,17 +429,22 @@ def format_sql_query_result(result: Dict[str, Any], output_format: str = "markdo
         json_result = {
             "row_count": result.get("row_count", len(result.get("rows", []))),
             "columns": result.get("columns", []),
-            "rows": result.get("rows", [])
+            "rows": result.get("rows", []),
+            # True when max_rows cut the result short, so a caller can never
+            # mistake a capped result for the complete one.
+            "more_rows_available": bool(result.get("more_rows_available", False)),
         }
-        return json.dumps(json_result, indent=2, default=_json_serializer)
+        return format_as_json(json_result)
 
     # Markdown format (default)
     headers = [str(h) for h in result["columns"]]
     rows = result["rows"]
 
-    def _escape(val: Any) -> str:
+    def _escape(val: Any) -> tuple[str, bool]:
         if val is None:
-            return ""
+            # The caller unpacks (text, truncated); a bare "" crashed every
+            # query that returned a NULL cell.
+            return "", False
         s = str(val)
         # Normalize whitespace to single spaces to avoid multi-line table injection
         s = s.replace("\r", " ").replace("\n", " ")

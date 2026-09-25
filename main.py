@@ -1,4 +1,5 @@
 from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp.exceptions import ToolError
 import json
 import os
 import sys
@@ -696,15 +697,26 @@ async def run_sql_query(sql: str, ctx: Context, max_rows: int = 100) -> str:
                     return maybe_wrap_untrusted(format_as_json({"message": result["message"]}))
                 return maybe_wrap_untrusted(result["message"])  # keep consistency
             if OUTPUT_FORMAT == "json":
-                return maybe_wrap_untrusted(format_as_json({"message": "Query executed successfully, but returned no rows."}))
+                # Same shape as a non-empty result, so a caller iterating
+                # `rows` needs no special case for zero rows.
+                return maybe_wrap_untrusted(format_sql_query_result(result, output_format="json"))
             return maybe_wrap_untrusted("Query executed successfully, but returned no rows.")
         formatted_result = format_sql_query_result(result, output_format=OUTPUT_FORMAT)
         return maybe_wrap_untrusted(formatted_result)
     except PermissionError as e:
+        if OUTPUT_FORMAT == "json":
+            # In JSON mode the caller is a program that parses the answer. An
+            # error returned as plain text looks like a successful call with
+            # unparseable content; raising marks the MCP result as isError.
+            raise ToolError(f"Permission error: {e}") from e
         return maybe_wrap_untrusted(f"Permission error: {e}")
     except oracledb.Error as e:
+        if OUTPUT_FORMAT == "json":
+            raise ToolError(f"Database error: {e}") from e
         return maybe_wrap_untrusted(f"Database error: {e}")
     except Exception as e:
+        if OUTPUT_FORMAT == "json":
+            raise ToolError(f"Unexpected error executing query: {e}") from e
         return maybe_wrap_untrusted(f"Unexpected error executing query: {e}")
 
 @mcp.tool()

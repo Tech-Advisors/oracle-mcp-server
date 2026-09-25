@@ -85,7 +85,7 @@ def test_format_sql_query_result_json_empty():
     assert parsed["row_count"] == 0
     assert parsed["columns"] == ["ID"]
     assert parsed["rows"] == []
-    assert "message" in parsed
+    assert parsed["more_rows_available"] is False
 
 
 def test_format_as_json_helper():
@@ -101,3 +101,32 @@ def test_format_as_json_helper():
     parsed = json.loads(json_output)
     
     assert parsed == data
+
+
+def test_format_sql_query_result_json_flags_capped_result():
+    """A result cut short by max_rows must say so."""
+    result = {"columns": ["ID"], "rows": [{"ID": 1}], "row_count": 1, "more_rows_available": True}
+    parsed = json.loads(format_sql_query_result(result, output_format="json"))
+    assert parsed["more_rows_available"] is True
+
+
+def test_format_sql_query_result_json_keeps_long_values_and_nulls():
+    """JSON output neither truncates cells nor conflates NULL with empty text."""
+    long_text = "x" * 5000
+    result = {
+        "columns": ["NOTE", "EMPTY", "MISSING"],
+        "rows": [{"NOTE": long_text, "EMPTY": "", "MISSING": None}],
+        "row_count": 1,
+    }
+    parsed = json.loads(format_sql_query_result(result, output_format="json"))
+    row = parsed["rows"][0]
+    assert row["NOTE"] == long_text
+    assert row["EMPTY"] == ""
+    assert row["MISSING"] is None
+
+
+def test_format_sql_query_result_markdown_null_cell():
+    """A NULL cell must not crash the markdown table."""
+    result = {"columns": ["A", "B"], "rows": [{"A": None, "B": 1}], "row_count": 1}
+    out = format_sql_query_result(result)
+    assert "| A" in out

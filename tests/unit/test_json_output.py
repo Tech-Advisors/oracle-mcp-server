@@ -34,7 +34,8 @@ def test_format_as_json_with_decimal():
     json_output = format_as_json(data)
     parsed = json.loads(json_output)
     
-    assert parsed["decimal_value"] == 123.45
+    # Exact string, never a float
+    assert parsed["decimal_value"] == "123.45"
     assert parsed["integer_value"] == 42
 
 
@@ -78,3 +79,22 @@ def test_format_as_json_with_none_values():
     assert parsed["null_field"] is None
     assert parsed["string_field"] == "value"
     assert parsed["number_field"] == 42
+
+
+def test_format_as_json_decimal_keeps_every_digit():
+    """Values beyond double precision survive unchanged."""
+    from decimal import Decimal
+    value = Decimal("123456789012345678.91")
+    parsed = json.loads(format_as_json({"amount": value}))
+    assert Decimal(parsed["amount"]) == value
+
+
+def test_format_as_json_bytes_and_timedelta():
+    from datetime import timedelta
+    parsed = json.loads(format_as_json({"raw": b"\x00\xff", "span": timedelta(days=1, hours=2)}))
+    assert parsed["raw"] == "00ff"
+    assert parsed["span"] == "1 day, 2:00:00"
+
+
+def test_format_as_json_is_compact():
+    assert format_as_json({"a": [1, 2]}) == '{"a":[1,2]}'

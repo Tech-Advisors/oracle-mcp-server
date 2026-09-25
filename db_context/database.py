@@ -1,4 +1,5 @@
 import sys
+from decimal import Decimal
 import oracledb
 import sqlparse
 import time
@@ -6,6 +7,28 @@ import asyncio
 from typing import Dict, List, Set, Optional, Any
 from pathlib import Path
 from .models import SchemaManager
+
+
+def _exact_output_type_handler(cursor, metadata):
+    """Fetch query results without losing precision or content.
+
+    python-oracledb returns a NUMBER with decimals as a float by default, which
+    rounds values with more significant digits than a double holds. Every
+    NUMBER that is not a declared integer (NUMBER(p) / NUMBER(p,0)) is fetched
+    as Decimal instead; that includes computed columns such as SUM() whose
+    scale Oracle leaves unspecified. CLOB/NCLOB and BLOB are fetched as their
+    full value rather than as LOB locators, which would otherwise render as an
+    object repr.
+    """
+    if metadata.type_code is oracledb.DB_TYPE_NUMBER:
+        if metadata.scale == 0 and metadata.precision:
+            return None
+        return cursor.var(Decimal, arraysize=cursor.arraysize)
+    if metadata.type_code in (oracledb.DB_TYPE_CLOB, oracledb.DB_TYPE_NCLOB):
+        return cursor.var(oracledb.DB_TYPE_LONG, arraysize=cursor.arraysize)
+    if metadata.type_code is oracledb.DB_TYPE_BLOB:
+        return cursor.var(oracledb.DB_TYPE_LONG_RAW, arraysize=cursor.arraysize)
+    return None
 
 class DatabaseConnector:
     def __init__(self, connection_string: str, target_schema: Optional[str] = None, use_thick_mode: bool = False, lib_dir: Optional[str] = None, read_only: bool = True):
@@ -793,14 +816,20 @@ class DatabaseConnector:
             
             # Check if this is a SELECT query (has description)
             if self._is_select_query(sql):
-                rows = await self._execute_cursor_fetch(cursor, sql, max_rows, **(params or {}))
+                cursor.outputtypehandler = _exact_output_type_handler
+                # Fetch one row past the cap so a capped result can say so,
+                # instead of looking exactly like a complete one.
+                rows = await self._execute_cursor_fetch(cursor, sql, max_rows + 1, **(params or {}))
+                more_rows_available = len(rows) > max_rows
+                rows = rows[:max_rows]
                 columns = [desc[0] for desc in cursor.description] if cursor.description else []
                 result_rows = [dict(zip(columns, row)) for row in rows]
                 
                 return {
                     "columns": columns,
                     "rows": result_rows,
-                    "row_count": len(result_rows)
+                    "row_count": len(result_rows),
+                    "more_rows_available": more_rows_available,
                 }
             else:
                 # Double-check read-only mode for non-SELECT statements
