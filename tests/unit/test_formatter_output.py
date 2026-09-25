@@ -1,3 +1,4 @@
+from decimal import Decimal
 import json
 from db_context.schema.formatter import format_sql_query_result, format_as_json, MAX_CELL_WIDTH
 
@@ -130,3 +131,15 @@ def test_format_sql_query_result_markdown_null_cell():
     result = {"columns": ["A", "B"], "rows": [{"A": None, "B": 1}], "row_count": 1}
     out = format_sql_query_result(result)
     assert "| A" in out
+
+
+def test_format_sql_query_result_json_carries_column_types():
+    result = {
+        "columns": ["BETRAG"],
+        "column_types": {"BETRAG": "NUMBER"},
+        "rows": [{"BETRAG": Decimal("1.10")}],
+        "row_count": 1,
+    }
+    parsed = json.loads(format_sql_query_result(result, output_format="json"))
+    assert parsed["column_types"] == {"BETRAG": "NUMBER"}
+    assert parsed["rows"][0]["BETRAG"] == "1.10"

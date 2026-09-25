@@ -822,11 +822,25 @@ class DatabaseConnector:
                 rows = await self._execute_cursor_fetch(cursor, sql, max_rows + 1, **(params or {}))
                 more_rows_available = len(rows) > max_rows
                 rows = rows[:max_rows]
-                columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                description = cursor.description or []
+                columns = [desc[0] for desc in description]
+                duplicates = sorted({c for c in columns if columns.count(c) > 1})
+                if duplicates:
+                    # Rows are keyed by column name, so a repeated name would
+                    # silently drop all but one of those columns.
+                    raise ValueError(
+                        f"Duplicate column names {duplicates}: give every selected column a unique alias"
+                    )
                 result_rows = [dict(zip(columns, row)) for row in rows]
                 
                 return {
                     "columns": columns,
+                    # Oracle type per column (NUMBER, DATE, VARCHAR, ...), so a
+                    # caller can turn exact decimal strings and ISO dates back
+                    # into numbers and dates without guessing from the value.
+                    "column_types": {
+                        desc[0]: desc[1].name.removeprefix("DB_TYPE_") for desc in description
+                    },
                     "rows": result_rows,
                     "row_count": len(result_rows),
                     "more_rows_available": more_rows_available,

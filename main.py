@@ -718,6 +718,10 @@ async def run_sql_query(sql: str, ctx: Context, max_rows: int = 100) -> str:
         if OUTPUT_FORMAT == "json":
             raise ToolError(f"Database error: {e}") from e
         return maybe_wrap_untrusted(f"Database error: {e}")
+    except ValueError as e:
+        if OUTPUT_FORMAT == "json":
+            raise ToolError(f"Invalid request: {e}") from e
+        return maybe_wrap_untrusted(f"Invalid request: {e}")
     except Exception as e:
         if OUTPUT_FORMAT == "json":
             raise ToolError(f"Unexpected error executing query: {e}") from e

@@ -419,6 +419,7 @@ def format_sql_query_result(result: Dict[str, Any], output_format: str = "markdo
             return format_as_json({
                 "row_count": 0,
                 "columns": result.get("columns", []),
+                "column_types": result.get("column_types", {}),
                 "rows": [],
                 "more_rows_available": False,
             })
@@ -429,6 +430,7 @@ def format_sql_query_result(result: Dict[str, Any], output_format: str = "markdo
         json_result = {
             "row_count": result.get("row_count", len(result.get("rows", []))),
             "columns": result.get("columns", []),
+            "column_types": result.get("column_types", {}),
             "rows": result.get("rows", []),
             # True when max_rows cut the result short, so a caller can never
             # mistake a capped result for the complete one.
