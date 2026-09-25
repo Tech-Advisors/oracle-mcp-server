@@ -40,3 +40,4 @@ def test_lobs_are_fetched_as_values():
 
 def test_other_types_untouched():
     assert _exact_output_type_handler(_FakeCursor(), _meta(oracledb.DB_TYPE_VARCHAR)) is None
+

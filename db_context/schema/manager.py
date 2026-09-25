@@ -137,6 +137,7 @@ class SchemaManager(SchemaManagerProtocol):
         # Check if we have the table in our cache
         if table_name not in self.cache.tables:
             self.cache.tables[table_name] = TableInfo(
+                table_name=table_name,
                 columns=[], 
                 relationships={}, 
                 fully_loaded=False
@@ -240,6 +241,7 @@ class SchemaManager(SchemaManagerProtocol):
                             # Update cache with the new column information
                             if table_name not in self.cache.tables:
                                 self.cache.tables[table_name] = TableInfo(
+                                    table_name=table_name,
                                     columns=columns,
                                     relationships={},
                                     fully_loaded=True

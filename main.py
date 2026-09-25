@@ -689,6 +689,10 @@ async def run_sql_query(sql: str, ctx: Context, max_rows: int = 100) -> str:
     db_context: DatabaseContext = ctx.request_context.lifespan_context
     
     try:
+        if max_rows < 1:
+            # 0 is a common guess for "unlimited"; answering it with an empty
+            # result that claims to be complete would be silently wrong.
+            raise ValueError("max_rows must be at least 1")
         result = await db_context.run_sql_query(sql, max_rows=max_rows)
         if not result.get("rows"):
             # Write or empty read response
