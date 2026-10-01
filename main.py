@@ -680,7 +680,11 @@ async def get_related_tables(table_name: str, ctx: Context) -> str:
 
 @mcp.tool()
 async def run_sql_query(sql: str, ctx: Context, max_rows: int = 100) -> str:
-    """Generic read-only SELECT executor (formatted output).
+    """Execute one SQL statement: SELECT/WITH return rows (formatted output).
+
+    INSERT, UPDATE, DELETE, MERGE, DDL and PL/SQL blocks run only when the
+    connection allows writes, and each one is committed immediately. On a
+    read-only connection they are refused with a permission error.
 
     Use: Ad hoc data inspection or metrics not exposed by other tools.
     Compose: Supplement structured metadata tools (e.g. row counts) sparingly.

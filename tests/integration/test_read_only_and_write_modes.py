@@ -44,3 +44,30 @@ async def test_cte_allowed_read_only(db_context_read_only: DatabaseContext):
     result = await db_context_read_only.run_sql_query("WITH x AS (SELECT 1 AS a FROM dual) SELECT a FROM x")
     assert result["row_count"] == 1
     assert result["rows"][0]["A"] == 1
+
+async def test_write_is_committed_including_plsql(db_context_write_enabled: DatabaseContext, oracle_connection_string, tmp_path):
+    # A second, independent context sees only what was committed.
+    await db_context_write_enabled.run_sql_query("CREATE TABLE temp_commit_mcp (id NUMBER PRIMARY KEY, val VARCHAR2(20))")
+    try:
+        await db_context_write_enabled.run_sql_query("INSERT INTO temp_commit_mcp (id,val) VALUES (1,'dml')")
+        await db_context_write_enabled.run_sql_query(
+            "BEGIN INSERT INTO temp_commit_mcp (id,val) VALUES (2,'plsql'); END;"
+        )
+        other = DatabaseContext(
+            connection_string=oracle_connection_string,
+            cache_path=tmp_path / "other_cache.json",
+            read_only=True,
+        )
+        await other.initialize()
+        try:
+            rows = await other.run_sql_query("SELECT id, val FROM temp_commit_mcp ORDER BY id")
+        finally:
+            await other.close()
+        assert [r["VAL"] for r in rows["rows"]] == ["dml", "plsql"]
+    finally:
+        await db_context_write_enabled.run_sql_query("DROP TABLE temp_commit_mcp")
+
+
+async def test_plsql_block_blocked_in_read_only(db_context_read_only: DatabaseContext):
+    with pytest.raises(PermissionError):
+        await db_context_read_only.run_sql_query("BEGIN NULL; END;")

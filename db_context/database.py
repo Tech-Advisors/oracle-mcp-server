@@ -852,10 +852,12 @@ class DatabaseConnector:
                     
                 await self._execute_cursor_no_fetch(cursor, sql, **(params or {}))
                 row_count = cursor.rowcount
-                
-                # Only commit when the statement is an explicit DML or DDL operation
-                if self._is_write_operation(sql):
-                    await self._commit(conn)
+
+                # Commit every statement that got this far, not only the ones
+                # that start with a DML/DDL keyword: a PL/SQL block or CALL that
+                # writes was reported as executed and then rolled back when the
+                # connection went back to the pool.
+                await self._commit(conn)
                 return {
                     "columns": [],
                     "rows": [],
@@ -1009,32 +1011,4 @@ class DatabaseConnector:
         if first_val in {"EXPLAIN", "DESCRIBE", "SHOW"}:
             return True
 
-        return False
-
-    @staticmethod
-    def _is_write_operation(sql: str) -> bool:
-        """Return True if the SQL statement modifies data or structure, using sqlparse for accuracy."""
-        write_ops = {
-            "INSERT", "UPDATE", "DELETE", "MERGE", "CREATE", "ALTER",
-            "DROP", "TRUNCATE", "GRANT", "REVOKE", "REPLACE",
-        }
-
-        statements = sqlparse.parse(sql)
-        if not statements or len(statements) != 1:
-            return False
-
-        stmt = statements[0]
-        first_token = stmt.token_first(skip_cm=True)
-        if first_token is None:
-            return False
-
-        first_val = first_token.value.upper()
-
-        # Explicitly exclude read-only leading tokens before generic DML/DDL classification
-        if first_val in {"SELECT", "WITH", "EXPLAIN", "DESCRIBE", "SHOW"}:
-            return False
-
-        if (first_token.ttype in (sqlparse.tokens.Keyword.DML, sqlparse.tokens.Keyword.DDL)
-                or (first_token.ttype in sqlparse.tokens.Keyword and first_val in write_ops)):
-            return True
         return False

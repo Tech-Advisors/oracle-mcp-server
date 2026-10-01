@@ -18,25 +18,11 @@ from db_context.database import DatabaseConnector
     ("DELETE FROM t", False),
     ("CREATE TABLE x(a int)", False),
     ("DROP TABLE x", False),
+    ("BEGIN pkg.proc; END;", False),
+    # Inline PL/SQL in a WITH clause can write through an autonomous
+    # transaction, so it must not pass as a query.
+    ("WITH FUNCTION f RETURN NUMBER IS PRAGMA AUTONOMOUS_TRANSACTION; BEGIN "
+     "EXECUTE IMMEDIATE 'DELETE FROM t'; COMMIT; RETURN 1; END; SELECT f FROM dual", False),
 ])
 def test_is_select_query(sql, expected):
     assert DatabaseConnector._is_select_query(sql) is expected
-
-@pytest.mark.parametrize("sql,expected", [
-    ("INSERT INTO t VALUES(1)", True),
-    ("  update t set a=1", True),
-    ("DELETE FROM t", True),
-    ("MERGE INTO t USING s ON (t.id=s.id) WHEN MATCHED THEN UPDATE SET t.a=s.a", True),
-    ("CREATE TABLE x(a int)", True),
-    ("ALTER TABLE x ADD b int", True),
-    ("DROP TABLE x", True),
-    ("TRUNCATE TABLE x", True),
-    ("GRANT SELECT ON t TO u", True),
-    ("REVOKE SELECT ON t FROM u", True),
-    ("SELECT 1 FROM dual", False),
-    ("WITH c AS (SELECT 1 FROM dual) SELECT * FROM c", False),
-    ("EXPLAIN SELECT 1 FROM dual", False),
-    ("SELECT 1; DELETE FROM t", False),  # multi-statement returns False
-])
-def test_is_write_operation(sql, expected):
-    assert DatabaseConnector._is_write_operation(sql) is expected
