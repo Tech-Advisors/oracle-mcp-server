@@ -4,10 +4,10 @@ version = "0.1.5"
 description = "MCP server for Oracle database schema context retrieval"
 requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.2.1",
+    "mcp>=1.28.1,<2",
     "oracledb>=2.0.0",
     "python-dotenv>=1.0.0",
-    "sqlparse>=0.4.4",
+    "sqlparse>=0.6.0",
 ]
 
 [project.scripts]
